@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     phone: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    isVerified: { type: Boolean, default: false }, // Added for email verification
 
     // Fields for customers
     customerDetails: {
@@ -17,7 +18,7 @@ const userSchema = new mongoose.Schema(
       other: String,
     },
 
-    // Fields for tailors
+    // Fields for tailorse
     tailorDetails: {
       shopName: String,
       services: String,
