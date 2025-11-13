@@ -4,7 +4,6 @@ import 'screens/login_page.dart';
 import 'screens/signup_page.dart';
 import 'screens/home_page.dart';
 import 'screens/forgot_password_page.dart';
-import 'screens/verify_otp_page.dart'; // Added import
 import 'utils/globals.dart';
 
 void main() {
@@ -31,7 +30,6 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => const SignUpPage(),
         '/home': (context) => const HomePage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
-        '/verify-otp': (context) => const VerifyOtpPage(), // Added route
       },
     );
   }

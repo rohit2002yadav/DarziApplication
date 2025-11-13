@@ -28,60 +28,19 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  /// Show a custom SnackBar with an optional action button
-  void _showSnackBar(String message, {bool isError = true, String? actionLabel, VoidCallback? onActionPressed}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        action: actionLabel != null 
-          ? SnackBarAction(label: actionLabel, textColor: Colors.white, onPressed: onActionPressed!)
-          : null,
-      ),
-    );
-  }
-
-  /// Resend OTP for an unverified user
-  Future<void> _resendOtp() async {
-    final email = emailController.text.trim();
-    if (email.isEmpty) {
-      _showSnackBar("Please enter your email to resend OTP.");
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      const String apiUrl = "https://darziapplication.onrender.com/api/auth/resend-otp";
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"email": email}),
-      );
-
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        _showSnackBar(data["message"] ?? "New OTP sent!", isError: false);
-        Navigator.pushNamed(context, '/verify-otp', arguments: email);
-      } else {
-        _showSnackBar(data["error"] ?? "Failed to resend OTP.");
-      }
-    } catch (e) {
-      _showSnackBar("Network Error: $e");
-    } finally {
-      if(mounted) setState(() => _isLoading = false);
-    }
-  }
-
-
-  /// Main Login Function
+  /// ---------------------------- LOGIN FUNCTION ----------------------------
   Future<void> _loginUser() async {
-    String? inputIdentifier = isEmailSelected ? emailController.text.trim() : phoneController.text.trim();
+    String? inputIdentifier =
+    isEmailSelected ? emailController.text.trim() : phoneController.text.trim();
     String password = passwordController.text.trim();
 
     if (inputIdentifier.isEmpty || password.isEmpty) {
-      _showSnackBar("Please fill all fields.");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please fill all fields."),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -89,6 +48,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       const String apiUrl = "https://darziapplication.onrender.com/api/auth/login";
+
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {"Content-Type": "application/json"},
@@ -101,25 +61,34 @@ class _LoginPageState extends State<LoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        _showSnackBar("Login successful!", isError: false);
-        Navigator.pushReplacementNamed(context, '/home');
-      } else if (response.statusCode == 403 && data['needsVerification'] == true) {
-        // Handle unverified account
-        _showSnackBar(
-          data["error"] ?? "Account not verified.", 
-          actionLabel: "RESEND OTP", 
-          onActionPressed: _resendOtp
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data["message"] ?? "Login successful!"),
+            backgroundColor: Colors.green,
+          ),
         );
+        Navigator.pushReplacementNamed(context, '/home');
       } else {
-        _showSnackBar(data["error"] ?? "Login failed");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data["error"] ?? "Login failed"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      _showSnackBar("Network Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  /// ------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -137,39 +106,70 @@ class _LoginPageState extends State<LoginPage> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                const Text("Login", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black87)),
+                const Text(
+                  "Login",
+                  style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87),
+                ),
                 const SizedBox(height: 8),
-                const Text("Please provide the details below to log in", style: TextStyle(color: Colors.black54, fontSize: 15)),
+                const Text(
+                  "Please provide the details below to log in",
+                  style: TextStyle(color: Colors.black54, fontSize: 15),
+                ),
                 const SizedBox(height: 30),
                 Container(
-                  decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(25)),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
                   child: Row(
                     children: [
-                      _buildToggleButton("Email", isEmailSelected, () => setState(() => isEmailSelected = true)),
-                      _buildToggleButton("Phone", !isEmailSelected, () => setState(() => isEmailSelected = false)),
+                      _buildToggleButton("Email", isEmailSelected, () {
+                        setState(() => isEmailSelected = true);
+                      }),
+                      _buildToggleButton("Phone", !isEmailSelected, () {
+                        setState(() => isEmailSelected = false);
+                      }),
                     ],
                   ),
                 ),
                 const SizedBox(height: 25),
                 if (isEmailSelected)
-                  _buildInputField("Enter Your Email", Icons.email_outlined, emailController)
+                  _buildInputField(
+                      "Enter Your Email", Icons.email_outlined, emailController)
                 else
-                  _buildInputField("Enter Your Phone", Icons.phone, phoneController),
+                  _buildInputField(
+                      "Enter Your Phone", Icons.phone, phoneController),
                 const SizedBox(height: 15),
-                _buildInputField("Enter Your Password", Icons.lock_outline, passwordController, isPassword: true),
+                _buildInputField(
+                    "Enter Your Password", Icons.lock_outline, passwordController,
+                    isPassword: true),
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Checkbox(value: rememberMe, activeColor: Colors.orange, onChanged: (v) => setState(() => rememberMe = v ?? false)),
+                        Checkbox(
+                          value: rememberMe,
+                          activeColor: Colors.orange,
+                          onChanged: (v) {
+                            setState(() => rememberMe = v ?? false);
+                          },
+                        ),
                         const Text("Remember me"),
                       ],
                     ),
                     TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/forgot-password'),
-                      child: const Text("Forgot Password?", style: TextStyle(color: Colors.orange)),
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/forgot-password');
+                      },
+                      child: const Text(
+                        "Forgot Password?",
+                        style: TextStyle(color: Colors.orange),
+                      ),
                     ),
                   ],
                 ),
@@ -180,26 +180,45 @@ class _LoginPageState extends State<LoginPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
                     ),
                     onPressed: _isLoading ? null : _loginUser,
                     child: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text("Log In", style: TextStyle(fontSize: 18, color: Colors.white)),
+                        ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                        : const Text(
+                      "Log In",
+                      style: TextStyle(fontSize: 18, color: Colors.white),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 25),
-                 Row(
+                Row(
                   children: const [
                     Expanded(child: Divider(thickness: 1)),
-                    Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text("Or Continue With", style: TextStyle(color: Colors.black54))),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text("Or Continue With",
+                          style: TextStyle(color: Colors.black54)),
+                    ),
                     Expanded(child: Divider(thickness: 1)),
                   ],
                 ),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [ _socialButton("Google", Icons.g_mobiledata), _socialButton("Apple", Icons.apple) ],
+                  children: [
+                    _socialButton("Google", Icons.g_mobiledata),
+                    _socialButton("Apple", Icons.apple),
+                  ],
                 ),
                 const SizedBox(height: 25),
                 GestureDetector(
@@ -208,7 +227,14 @@ class _LoginPageState extends State<LoginPage> {
                     TextSpan(
                       text: "Don't have an account? ",
                       style: TextStyle(color: Colors.black54),
-                      children: [TextSpan(text: "Sign Up", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold))],
+                      children: [
+                        TextSpan(
+                          text: "Sign Up",
+                          style: TextStyle(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -226,27 +252,44 @@ class _LoginPageState extends State<LoginPage> {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(color: active ? Colors.orange : Colors.transparent, borderRadius: BorderRadius.circular(25)),
+          decoration: BoxDecoration(
+            color: active ? Colors.orange : Colors.transparent,
+            borderRadius: BorderRadius.circular(25),
+          ),
           alignment: Alignment.center,
-          child: Text(text, style: TextStyle(color: active ? Colors.white : Colors.black, fontWeight: FontWeight.w600)),
+          child: Text(
+            text,
+            style: TextStyle(
+                color: active ? Colors.white : Colors.black,
+                fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildInputField(String label, IconData icon, TextEditingController controller, {bool isPassword = false}) {
+  Widget _buildInputField(String label, IconData icon,
+      TextEditingController controller,
+      {bool isPassword = false}) {
     return TextField(
       controller: controller,
       obscureText: isPassword ? !_showPassword : false,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: Colors.orange),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
         suffixIcon: isPassword
             ? IconButton(
-                icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off, color: Colors.orange),
-                onPressed: () => setState(() => _showPassword = !_showPassword),
-              )
+          icon: Icon(
+            _showPassword ? Icons.visibility : Icons.visibility_off,
+            color: Colors.orange,
+          ),
+          onPressed: () {
+            setState(() => _showPassword = !_showPassword);
+          },
+        )
             : null,
       ),
     );
@@ -256,14 +299,20 @@ class _LoginPageState extends State<LoginPage> {
     return ElevatedButton.icon(
       onPressed: () {
         scaffoldMessengerKey.currentState?.showSnackBar(
-          SnackBar(content: Text("$label login not yet implemented."), backgroundColor: Colors.blueAccent),
+          SnackBar(
+            content: Text("$label login not yet implemented."),
+            backgroundColor: Colors.blueAccent,
+          ),
         );
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.black12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Colors.black12),
+        ),
       ),
       icon: Icon(icon, size: 26, color: Colors.black),
       label: Text(label, style: const TextStyle(fontSize: 16)),
