@@ -6,16 +6,20 @@ import resend from "../utils/email.js";
 
 const router = express.Router();
 
-// 1. SEND OTP FOR NEW REGISTRATION
+// 1. SEND OTP FOR REGISTRATION
 router.post("/send-otp", async (req, res) => {
   try {
     const { email, phone } = req.body;
 
-    const existingVerifiedUser = await User.findOne({ $or: [{ email }, { phone }], isVerified: true });
-    if (existingVerifiedUser) {
-      return res.status(400).json({ error: "An account with this email or phone already exists." });
+    // 1. Check if a user exists with this email or phone
+    let user = await User.findOne({ $or: [{ email }, { phone }] });
+
+    // 2. If a verified user exists, block the registration
+    if (user && user.isVerified) {
+      return res.status(400).json({ error: "A verified account with this email or phone already exists." });
     }
 
+    // 3. Generate new OTP and hash the password
     const otp = otpGenerator.generate(6, { 
       upperCaseAlphabets: false, 
       specialChars: false,
@@ -24,18 +28,30 @@ router.post("/send-otp", async (req, res) => {
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
 
-    const user = await User.findOneAndUpdate(
-      { email }, 
-      { 
-        ...req.body, 
-        password: hashedPassword, 
+    // 4. If user exists (but is unverified), update them. Otherwise, create a new user.
+    if (user) {
+      // Update the existing unverified user with new data and a new OTP
+      user.name = req.body.name;
+      user.password = hashedPassword;
+      user.otp = otp;
+      user.otpExpires = otpExpires;
+      // Update any other details they might have changed on the form
+      Object.assign(user, req.body);
+    } else {
+      // No user exists, so create a new unverified one
+      user = new User({
+        ...req.body,
+        password: hashedPassword,
         otp,
         otpExpires,
-        isVerified: false, 
-      },
-      { new: true, upsert: true } 
-    );
+        isVerified: false,
+      });
+    }
+    
+    // Save the new or updated user to the database
+    await user.save();
 
+    // 5. Send the email
     await resend.emails.send({
       from: 'onboarding@resend.dev',
       to: email,
@@ -46,8 +62,12 @@ router.post("/send-otp", async (req, res) => {
     res.status(200).json({ message: "OTP sent successfully to your email." });
 
   } catch (err) {
+    // This is a safety net in case of a race condition
+    if (err.code === 11000) {
+      return res.status(400).json({ error: "A user with this email or phone number already exists." });
+    }
     console.error("Error in /send-otp:", err);
-    res.status(500).json({ error: "Failed to send OTP. " + err.message });
+    res.status(500).json({ error: "Failed to send OTP. Please try again later." });
   }
 });
 
@@ -74,7 +94,7 @@ router.post("/verify-and-register", async (req, res) => {
   }
 });
 
-// 3. RESEND OTP FOR UNVERIFIED USERS
+// 3. RESEND OTP FOR UNVERIFIED USERS (from login page)
 router.post("/resend-otp", async (req, res) => {
   try {
     const { email } = req.body;
@@ -124,7 +144,6 @@ router.post("/login", async (req, res) => {
     }
 
     if (!user.isVerified) {
-        // Use a special status code (e.g., 403 Forbidden) for this case
         return res.status(403).json({ 
           error: "Account not verified.",
           needsVerification: true 
