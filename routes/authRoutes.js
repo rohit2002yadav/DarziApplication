@@ -2,20 +2,18 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import otpGenerator from 'otp-generator';
 import User from "../models/User.js";
-import resend from "../utils/email.js"; // Import the Resend instance
+import resend from "../utils/email.js";
 
 const router = express.Router();
 
-const otpStore = {};
-
-// 1. SEND OTP FOR REGISTRATION
+// 1. SEND OTP FOR NEW REGISTRATION
 router.post("/send-otp", async (req, res) => {
   try {
     const { email, phone } = req.body;
 
-    const existingUser = await User.findOne({ $or: [{ email }, { phone }], isVerified: true });
-    if (existingUser) {
-      return res.status(400).json({ error: "User already exists" });
+    const existingVerifiedUser = await User.findOne({ $or: [{ email }, { phone }], isVerified: true });
+    if (existingVerifiedUser) {
+      return res.status(400).json({ error: "An account with this email or phone already exists." });
     }
 
     const otp = otpGenerator.generate(6, { 
@@ -23,27 +21,32 @@ router.post("/send-otp", async (req, res) => {
       specialChars: false,
       lowerCaseAlphabets: false,
     });
-
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    otpStore[email] = { ...req.body, password: hashedPassword, otp, timestamp: Date.now() };
 
-    // Send the email using Resend
+    const user = await User.findOneAndUpdate(
+      { email }, 
+      { 
+        ...req.body, 
+        password: hashedPassword, 
+        otp,
+        otpExpires,
+        isVerified: false, 
+      },
+      { new: true, upsert: true } 
+    );
+
     await resend.emails.send({
-      from: 'onboarding@resend.dev', // Use Resend's test email address
+      from: 'onboarding@resend.dev',
       to: email,
       subject: 'Your OTP for Darzi App Registration',
-      html: `
-        <h2>Welcome to Darzi App!</h2>
-        <p>Thank you for registering. Please use the following One-Time Password (OTP) to verify your account:</p>
-        <h1 style="font-size: 36px; letter-spacing: 4px; margin: 20px 0;">${otp}</h1>
-        <p>This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
-      `
+      html: `<h1>Your OTP is ${otp}</h1>`
     });
 
     res.status(200).json({ message: "OTP sent successfully to your email." });
 
   } catch (err) {
-    console.error("Error in /send-otp:", err); // Log the actual error
+    console.error("Error in /send-otp:", err);
     res.status(500).json({ error: "Failed to send OTP. " + err.message });
   }
 });
@@ -53,24 +56,16 @@ router.post("/verify-and-register", async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const storedData = otpStore[email];
+    const user = await User.findOne({ email, isVerified: false });
 
-    if (!storedData) {
-      return res.status(400).json({ error: "Invalid request or OTP expired. Please try again." });
-    }
-    if (storedData.otp !== otp) {
-      return res.status(400).json({ error: "Invalid OTP." });
-    }
-    const tenMinutes = 10 * 60 * 1000;
-    if (Date.now() - storedData.timestamp > tenMinutes) {
-      delete otpStore[email]; // Clean up expired OTP
-      return res.status(400).json({ error: "OTP expired. Please request a new one." });
+    if (!user || user.otp !== otp || user.otpExpires < new Date()) {
+      return res.status(400).json({ error: "Invalid or expired OTP. Please try again." });
     }
 
-    const newUser = new User({ ...storedData, isVerified: true });
-    await newUser.save();
-
-    delete otpStore[email];
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
 
     res.status(201).json({ message: "Registration successful! You can now log in." });
 
@@ -79,8 +74,46 @@ router.post("/verify-and-register", async (req, res) => {
   }
 });
 
+// 3. RESEND OTP FOR UNVERIFIED USERS
+router.post("/resend-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
 
-// LOGIN
+    if (!user) {
+      return res.status(404).json({ error: "No account found with this email." });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ error: "This account is already verified." });
+    }
+
+    const otp = otpGenerator.generate(6, { 
+      upperCaseAlphabets: false, 
+      specialChars: false,
+      lowerCaseAlphabets: false,
+    });
+    user.otp = otp;
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await user.save();
+
+    await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: email,
+      subject: 'Your New OTP for Darzi App',
+      html: `<h1>Your new OTP is ${otp}</h1>`
+    });
+
+    res.status(200).json({ message: "A new OTP has been sent to your email." });
+
+  } catch (err) {
+     console.error("Error in /resend-otp:", err);
+    res.status(500).json({ error: "Failed to resend OTP. " + err.message });
+  }
+});
+
+
+// 4. LOGIN
 router.post("/login", async (req, res) => {
   try {
     const { email, phone, password } = req.body;
@@ -91,7 +124,11 @@ router.post("/login", async (req, res) => {
     }
 
     if (!user.isVerified) {
-        return res.status(401).json({ error: "Account not verified. Please complete the registration process." });
+        // Use a special status code (e.g., 403 Forbidden) for this case
+        return res.status(403).json({ 
+          error: "Account not verified.",
+          needsVerification: true 
+        });
     }
 
     const isValid = await bcrypt.compare(password, user.password);
