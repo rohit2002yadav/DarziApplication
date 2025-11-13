@@ -4,7 +4,7 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-// INSTANT SIGNUP (register) - NO OTP REQUIRED
+// INSTANT SIGNUP (register)
 router.post("/register", async (req, res) => {
   try {
     const { email, phone, password } = req.body;
@@ -47,11 +47,6 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ $or: [{ email }, { phone }] });
     if (!user) {
       return res.status(400).json({ error: "User not found" });
-    }
-
-    // The isVerified check is no longer strictly necessary but is good practice
-    if (!user.isVerified) {
-        return res.status(403).json({ error: "Account is not active. Please contact support." });
     }
 
     const isValid = await bcrypt.compare(password, user.password);

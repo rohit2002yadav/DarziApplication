@@ -7,11 +7,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     phone: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    isVerified: { type: Boolean, default: false },
-
-    // Fields for OTP Verification
-    otp: { type: String },
-    otpExpires: { type: Date },
+    isVerified: { type: Boolean, default: true }, // Simplified
 
     // Fields for customers
     customerDetails: {
