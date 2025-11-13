@@ -14,7 +14,18 @@ export const initializeSendGrid = () => {
 
 const router = express.Router();
 
-// ... (rest of the routes remain the same) ...
+// --- NEW ROUTE --- 
+// GET ALL TAILORS
+router.get("/tailors", async (req, res) => {
+  try {
+    const tailors = await User.find({ role: "tailor" }).select('-password');
+    res.status(200).json(tailors);
+  } catch (err) {
+    console.error("Error fetching tailors:", err);
+    res.status(500).json({ error: "Failed to fetch tailors." });
+  }
+});
+
 
 // 5. FORGOT PASSWORD
 router.post("/forgot-password", async (req, res) => {
