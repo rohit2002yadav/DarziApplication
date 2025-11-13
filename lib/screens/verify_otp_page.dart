@@ -46,7 +46,7 @@ class _VerifyOtpPageState extends State<VerifyOtpPage> {
         );
         // Navigate to the login screen, clearing the navigation stack.
         Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
-      } else if(response.statusCode.isNaN) {
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(resBody['error'] ?? "Verification failed. Please try again."),
