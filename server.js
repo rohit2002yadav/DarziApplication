@@ -4,7 +4,10 @@ dotenv.config(); // Load environment variables FIRST
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import authRoutes from "./routes/authRoutes.js";
+import authRoutes, { initializeSendGrid } from "./routes/authRoutes.js";
+
+// Initialize SendGrid now that the API key is loaded from .env
+initializeSendGrid();
 
 const app = express();
 app.use(cors());
