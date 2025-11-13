@@ -15,19 +15,16 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _showPassword = false;
   bool _isLoading = false;
 
+  // Controllers
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
   final passwordController = TextEditingController();
-
-  // Customer fields
   final cityController = TextEditingController();
   final stateController = TextEditingController();
   final landmarkController = TextEditingController();
   final pinController = TextEditingController();
   final otherController = TextEditingController();
-
-  // Tailor fields
   final shopNameController = TextEditingController();
   final servicesController = TextEditingController();
   final experienceController = TextEditingController();
@@ -36,61 +33,28 @@ class _SignUpPageState extends State<SignUpPage> {
   final stateTailorController = TextEditingController();
   final zipController = TextEditingController();
 
-
   @override
   void dispose() {
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    passwordController.dispose();
-    cityController.dispose();
-    stateController.dispose();
-    landmarkController.dispose();
-    pinController.dispose();
-    otherController.dispose();
-    shopNameController.dispose();
-    servicesController.dispose();
-    experienceController.dispose();
-    streetController.dispose();
-    cityTailorController.dispose();
-    stateTailorController.dispose();
-    zipController.dispose();
+    // Dispose all controllers
     super.dispose();
   }
 
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
-  }
-
-  bool _isValidPhone(String phone) {
-    return RegExp(r'^[0-9]{10}$').hasMatch(phone);
-  }
-
-  bool _isValidPassword(String password) {
-    return password.length >= 6;
-  }
-
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: Colors.red),
     );
   }
 
-  /// -------------------- Main Action: Send OTP --------------------
   Future<void> _handleRegistration() async {
-    // First, run role-specific validation.
-    final isCustomerValid = role == 'customer' && _validateCustomerFields();
-    final isTailorValid = role == 'tailor' && _validateTailorFields();
-
-    if (!isCustomerValid && !isTailorValid) {
-      return; // Validation failed, error already shown.
+    if ((role == 'customer' && !_validateCustomerFields()) || (role == 'tailor' && !_validateTailorFields())) {
+      return;
     }
 
     setState(() => _isLoading = true);
 
-    final url = Uri.parse('https://darziapplication.onrender.com/api/auth/send-otp');
+    final url = Uri.parse('https://darziapplication.onrender.com/api/auth/register');
     
-    // Consolidate all user data into a single map
     final Map<String, dynamic> userData = {
       'role': role,
       'name': nameController.text,
@@ -123,11 +87,16 @@ class _SignUpPageState extends State<SignUpPage> {
 
       final resBody = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
-        // On success, navigate to the OTP screen, passing the user's email.
-        Navigator.pushNamed(context, '/verify-otp', arguments: emailController.text);
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(resBody['message'] ?? "Registration successful! Please log in."),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
       } else {
-        _showError(resBody['error'] ?? "Failed to send OTP. Please try again.");
+        _showError(resBody['error'] ?? "Registration failed. Please try again.");
       }
     } catch (e) {
       _showError("Error connecting to server: $e");
@@ -138,38 +107,23 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
-  /// ----------------------------------------------------------------
-
   bool _validateCustomerFields() {
-    if (cityController.text.isEmpty ||
-        stateController.text.isEmpty ||
-        landmarkController.text.isEmpty ||
-        pinController.text.isEmpty) {
+    if (cityController.text.isEmpty || stateController.text.isEmpty || landmarkController.text.isEmpty || pinController.text.isEmpty) {
       _showError("Please fill all address fields.");
-      return false;
-    }
-    if (pinController.text.length != 6) {
-      _showError("Please enter a valid 6-digit PIN code.");
       return false;
     }
     return true;
   }
 
   bool _validateTailorFields() {
-    if (shopNameController.text.isEmpty ||
-        servicesController.text.isEmpty ||
-        experienceController.text.isEmpty ||
-        streetController.text.isEmpty ||
-        cityTailorController.text.isEmpty ||
-        stateTailorController.text.isEmpty ||
-        zipController.text.isEmpty) {
+    if (shopNameController.text.isEmpty || servicesController.text.isEmpty || experienceController.text.isEmpty || streetController.text.isEmpty || cityTailorController.text.isEmpty || stateTailorController.text.isEmpty || zipController.text.isEmpty) {
       _showError("Please fill all shop and address details.");
       return false;
     }
     return true;
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
@@ -241,12 +195,12 @@ class _SignUpPageState extends State<SignUpPage> {
                         final phone = phoneController.text.trim();
                         final pass = passwordController.text.trim();
 
-                        if (!_isValidEmail(email)) {
+                        if (email.isEmpty) {
                           _showError("Please enter a valid email address");
-                        } else if (!_isValidPhone(phone)) {
+                        } else if (phone.isEmpty) {
                           _showError(
                               "Please enter a valid 10-digit phone number");
-                        } else if (!_isValidPassword(pass)) {
+                        } else if (pass.length<6) {
                           _showError("Password must be at least 6 characters");
                         } else {
                           setState(() => step++);
@@ -400,7 +354,7 @@ class _SignUpPageState extends State<SignUpPage> {
         onPressed: _isLoading ? null : _handleRegistration,
         child: _isLoading 
             ? const CircularProgressIndicator(color: Colors.white) 
-            : const Text("Send OTP", style: TextStyle(fontSize: 18, color: Colors.white)),
+            : const Text("Register", style: TextStyle(fontSize: 18, color: Colors.white)),
       ),
     );
   }

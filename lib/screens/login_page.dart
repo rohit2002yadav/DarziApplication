@@ -14,7 +14,7 @@ class _LoginPageState extends State<LoginPage> {
   bool isEmailSelected = true;
   bool rememberMe = false;
   bool _isLoading = false;
-  bool _showPassword = false; // Added for password visibility
+  bool _showPassword = false;
 
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
@@ -47,9 +47,7 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      // 🔗 Use your backend API URL
       const String apiUrl = "https://darziapplication.onrender.com/api/auth/login";
-      // 👆 10.0.2.2 works for Android Emulator (replace with your local IP for real devices)
 
       final response = await http.post(
         Uri.parse(apiUrl),
@@ -63,34 +61,25 @@ class _LoginPageState extends State<LoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // ✅ Successful login
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(data["message"] ?? "Login successful!"),
             backgroundColor: Colors.green,
           ),
         );
-
-        // Optional: Save token for future sessions
-        // final prefs = await SharedPreferences.getInstance();
-        // await prefs.setString('token', data["token"]);
-
-        // Navigate to home screen
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        // ❌ Invalid credentials or server response
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(data["message"] ?? "Login failed"),
+            content: Text(data["error"] ?? "Login failed"),
             backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
-      // 🔥 Handle network errors
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error: \$e"),
+          content: Text("Error: $e"),
           backgroundColor: Colors.red,
         ),
       );
@@ -130,8 +119,6 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(color: Colors.black54, fontSize: 15),
                 ),
                 const SizedBox(height: 30),
-
-                // Email / Phone toggle
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.orange.shade100,
@@ -149,7 +136,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 25),
-
                 if (isEmailSelected)
                   _buildInputField(
                       "Enter Your Email", Icons.email_outlined, emailController)
@@ -160,7 +146,6 @@ class _LoginPageState extends State<LoginPage> {
                 _buildInputField(
                     "Enter Your Password", Icons.lock_outline, passwordController,
                     isPassword: true),
-
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -189,8 +174,6 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
                 const SizedBox(height: 20),
-
-                // Login Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -217,7 +200,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 25),
                 Row(
                   children: const [
@@ -231,7 +213,6 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
                 const SizedBox(height: 20),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -240,7 +221,6 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
                 const SizedBox(height: 25),
-
                 GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/signup'),
                   child: const Text.rich(
@@ -320,7 +300,7 @@ class _LoginPageState extends State<LoginPage> {
       onPressed: () {
         scaffoldMessengerKey.currentState?.showSnackBar(
           SnackBar(
-            content: Text("\$label login not yet implemented."),
+            content: Text("$label login not yet implemented."),
             backgroundColor: Colors.blueAccent,
           ),
         );
