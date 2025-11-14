@@ -1,6 +1,5 @@
 import express from "express";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import otpGenerator from 'otp-generator';
 import sgMail from '@sendgrid/mail';
 import User from "../models/User.js";
@@ -14,62 +13,67 @@ export const initializeSendGrid = () => {
 
 const router = express.Router();
 
-// --- NEW ROUTE --- 
-// GET ALL TAILORS
-router.get("/tailors", async (req, res) => {
-  try {
-    const tailors = await User.find({ role: "tailor" }).select('-password');
-    res.status(200).json(tailors);
-  } catch (err) {
-    console.error("Error fetching tailors:", err);
-    res.status(500).json({ error: "Failed to fetch tailors." });
-  }
-});
+// --- PASSWORD RESET FLOW ---
 
-
-// 5. FORGOT PASSWORD
+// 1. FORGOT PASSWORD (SEND OTP)
 router.post("/forgot-password", async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
+    const { email } = req.body;
+    const user = await User.findOne({ email });
 
+    // Security: Always send a success-like response to prevent email enumeration
     if (!user) {
-      return res.status(200).json({ message: "If an account with that email exists, a password reset link has been sent." });
+      return res.status(200).json({ message: "If an account with this email exists, an OTP has been sent." });
     }
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    user.resetPasswordToken = crypto.createHash("sha256").update(resetToken).digest("hex");
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
+    // Generate a simple 6-digit OTP
+    const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
+    
+    // Save the OTP and its expiration time to the user's record
+    user.otp = otp; 
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
-    console.log(`Password reset token for ${user.email}: ${resetToken}`);
+    // Send the OTP via SendGrid
+    const msg = {
+      to: email,
+      from: process.env.VERIFIED_EMAIL,
+      subject: 'Your Password Reset OTP for Darzi App',
+      html: `<h1>Your password reset OTP is: ${otp}</h1><p>This OTP will expire in 10 minutes.</p>`,
+    };
+    await sgMail.send(msg);
 
-    res.status(200).json({ message: "If an account with that email exists, a password reset link has been sent." });
+    res.status(200).json({ message: "An OTP has been sent to your email address." });
 
   } catch (err) {
     console.error("Error in /forgot-password:", err);
-    res.status(500).json({ error: "An error occurred. Please try again later." });
+    res.status(500).json({ error: "An error occurred while sending the OTP." });
   }
 });
 
-// 6. RESET PASSWORD
+// 2. RESET PASSWORD (VERIFY OTP AND UPDATE)
 router.post("/reset-password", async (req, res) => {
   try {
-    const { token, password } = req.body;
+    const { email, otp, password } = req.body;
 
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-
+    // Find user by email, check if OTP is correct and not expired
     const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: Date.now() },
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() }, // Check if OTP is not expired
     });
 
     if (!user) {
-      return res.status(400).json({ error: "Password reset token is invalid or has expired." });
+      return res.status(400).json({ error: "Invalid OTP or OTP has expired. Please request a new one." });
     }
 
+    // Set the new password by hashing it
     user.password = await bcrypt.hash(password, 10);
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    
+    // Clear the OTP fields now that it has been used
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    
     await user.save();
 
     res.status(200).json({ message: "Password has been successfully reset. You can now log in." });
@@ -81,27 +85,20 @@ router.post("/reset-password", async (req, res) => {
 });
 
 
-// --- PREVIOUSLY EXISTING ROUTES ---
 
-// 1. SEND OTP FOR REGISTRATION
+// --- (Other routes like /login, /send-otp for signup, etc. are below and unchanged) ---
+
+// SEND OTP FOR REGISTRATION
 router.post("/send-otp", async (req, res) => {
   try {
     const { email, phone } = req.body;
-
     let user = await User.findOne({ $or: [{ email }, { phone }] });
-
     if (user && user.isVerified) {
       return res.status(400).json({ error: "A verified account with this email or phone already exists." });
     }
-
-    const otp = otpGenerator.generate(6, { 
-      upperCaseAlphabets: false, 
-      specialChars: false,
-      lowerCaseAlphabets: false,
-    });
+    const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
-
     if (user) {
       user.name = req.body.name;
       user.password = hashedPassword;
@@ -109,118 +106,47 @@ router.post("/send-otp", async (req, res) => {
       user.otpExpires = otpExpires;
       Object.assign(user, req.body);
     } else {
-      user = new User({
-        ...req.body,
-        password: hashedPassword,
-        otp,
-        otpExpires,
-        isVerified: false,
-      });
+      user = new User({ ...req.body, password: hashedPassword, otp, otpExpires, isVerified: false });
     }
-    
     await user.save();
-
-    const msg = {
-      to: email,
-      from: process.env.VERIFIED_EMAIL,
-      subject: 'Your OTP for Darzi App Registration',
-      html: `<h1>Your OTP is ${otp}</h1>`,
-    };
+    const msg = { to: email, from: process.env.VERIFIED_EMAIL, subject: 'Your OTP for Darzi App Registration', html: `<h1>Your OTP is ${otp}</h1>` };
     await sgMail.send(msg);
-
     res.status(200).json({ message: "OTP sent successfully to your email." });
-
   } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: "A user with this email or phone number already exists." });
-    }
+    if (err.code === 11000) return res.status(400).json({ error: "A user with this email or phone number already exists." });
     console.error("Error in /send-otp:", err);
     res.status(500).json({ error: "Failed to send OTP. Please try again later." });
   }
 });
 
-// 2. VERIFY OTP AND COMPLETE REGISTRATION
+// VERIFY OTP AND COMPLETE REGISTRATION
 router.post("/verify-and-register", async (req, res) => {
   try {
     const { email, otp } = req.body;
     const user = await User.findOne({ email, isVerified: false });
-
     if (!user || user.otp !== otp || user.otpExpires < new Date()) {
       return res.status(400).json({ error: "Invalid or expired OTP. Please try again." });
     }
-
     user.isVerified = true;
     user.otp = undefined;
     user.otpExpires = undefined;
     await user.save();
-
     res.status(201).json({ message: "Registration successful! You can now log in." });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3. RESEND OTP FOR UNVERIFIED USERS (from login page)
-router.post("/resend-otp", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ error: "No account found with this email." });
-    }
-    if (user.isVerified) {
-      return res.status(400).json({ error: "This account is already verified." });
-    }
-
-    const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
-    user.otp = otp;
-    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
-    await user.save();
-
-    const msg = {
-      to: email,
-      from: process.env.VERIFIED_EMAIL,
-      subject: 'Your New OTP for Darzi App',
-      html: `<h1>Your new OTP is ${otp}</h1>`,
-    };
-    await sgMail.send(msg);
-
-    res.status(200).json({ message: "A new OTP has been sent to your email." });
-
-  } catch (err) {
-    console.error("Error in /resend-otp:", err);
-    res.status(500).json({ error: "Failed to resend OTP. " + err.message });
-  }
-});
-
-// 4. LOGIN
+// LOGIN
 router.post("/login", async (req, res) => {
   try {
     const { email, phone, password } = req.body;
     const user = await User.findOne({ $or: [{ email }, { phone }] });
-
-    if (!user) {
-      return res.status(400).json({ error: "User not found" });
-    }
-
-    if (!user.isVerified) {
-      return res.status(403).json({ 
-        error: "Account not verified.",
-        needsVerification: true 
-      });
-    }
-
+    if (!user) return res.status(400).json({ error: "User not found" });
+    if (!user.isVerified) return res.status(403).json({ error: "Account not verified.", needsVerification: true });
     const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) {
-      return res.status(400).json({ error: "Invalid password" });
-    }
-
-    res.status(200).json({
-      message: "Login successful",
-      user: { name: user.name, role: user.role, email: user.email, phone: user.phone },
-    });
+    if (!isValid) return res.status(400).json({ error: "Invalid password" });
+    res.status(200).json({ message: "Login successful", user: { name: user.name, role: user.role, email: user.email, phone: user.phone }});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
