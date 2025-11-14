@@ -26,16 +26,18 @@ const userSchema = new mongoose.Schema(
       other: String,
     },
 
-    // Fields for tailors
+    // Fields for tailors - EXPANDED STRUCTURE
     tailorDetails: {
       shopName: String,
-      services: String,
-      experience: String,
-      street: String,
+      profilePictureUrl: String,
+      shopPictureUrl: String,
+      tailorType: String,
+      // New Address Fields for Tailor
+      address: String,
       city: String,
       state: String,
-      zip: String,
-      other: String,
+      landmark: String,
+      zipCode: String,
     },
   },
   { timestamps: true }

@@ -10,7 +10,10 @@ import authRoutes, { initializeSendGrid } from "./routes/authRoutes.js";
 initializeSendGrid();
 
 const app = express();
-app.use(cors());
+
+// --- IMPORTANT: Configure CORS to accept all requests ---
+app.use(cors({ origin: true, credentials: true }));
+
 app.use(express.json());
 
 // Connect MongoDB
