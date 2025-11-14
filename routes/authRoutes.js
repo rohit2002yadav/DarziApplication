@@ -13,82 +13,37 @@ export const initializeSendGrid = () => {
 
 const router = express.Router();
 
-// --- PASSWORD RESET FLOW ---
+// --- MAIN USER & DATA ROUTES ---
 
-// 1. FORGOT PASSWORD (SEND OTP)
-router.post("/forgot-password", async (req, res) => {
+// GET ALL TAILORS
+router.get("/tailors", async (req, res) => {
   try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-
-    // Security: Always send a success-like response to prevent email enumeration
-    if (!user) {
-      return res.status(200).json({ message: "If an account with this email exists, an OTP has been sent." });
-    }
-
-    // Generate a simple 6-digit OTP
-    const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
-    
-    // Save the OTP and its expiration time to the user's record
-    user.otp = otp; 
-    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-    await user.save();
-
-    // Send the OTP via SendGrid
-    const msg = {
-      to: email,
-      from: process.env.VERIFIED_EMAIL,
-      subject: 'Your Password Reset OTP for Darzi App',
-      html: `<h1>Your password reset OTP is: ${otp}</h1><p>This OTP will expire in 10 minutes.</p>`,
-    };
-    await sgMail.send(msg);
-
-    res.status(200).json({ message: "An OTP has been sent to your email address." });
-
+    const tailors = await User.find({ role: "tailor" }).select('-password');
+    res.status(200).json(tailors);
   } catch (err) {
-    console.error("Error in /forgot-password:", err);
-    res.status(500).json({ error: "An error occurred while sending the OTP." });
+    console.error("Error fetching tailors:", err);
+    res.status(500).json({ error: "Failed to fetch tailors." });
   }
 });
 
-// 2. RESET PASSWORD (VERIFY OTP AND UPDATE)
-router.post("/reset-password", async (req, res) => {
+// LOGIN
+router.post("/login", async (req, res) => {
   try {
-    const { email, otp, password } = req.body;
-
-    // Find user by email, check if OTP is correct and not expired
-    const user = await User.findOne({
-      email,
-      otp,
-      otpExpires: { $gt: Date.now() }, // Check if OTP is not expired
-    });
-
-    if (!user) {
-      return res.status(400).json({ error: "Invalid OTP or OTP has expired. Please request a new one." });
-    }
-
-    // Set the new password by hashing it
-    user.password = await bcrypt.hash(password, 10);
-    
-    // Clear the OTP fields now that it has been used
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    
-    await user.save();
-
-    res.status(200).json({ message: "Password has been successfully reset. You can now log in." });
-
+    const { email, phone, password } = req.body;
+    const user = await User.findOne({ $or: [{ email }, { phone }] });
+    if (!user) return res.status(400).json({ error: "User not found" });
+    if (!user.isVerified) return res.status(403).json({ error: "Account not verified.", needsVerification: true });
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return res.status(400).json({ error: "Invalid password" });
+    res.status(200).json({ message: "Login successful", user: { name: user.name, role: user.role, email: user.email, phone: user.phone }});
   } catch (err) {
-    console.error("Error in /reset-password:", err);
-    res.status(500).json({ error: "An error occurred. Please try again later." });
+    res.status(500).json({ error: err.message });
   }
 });
 
+// --- REGISTRATION FLOW ---
 
-
-// --- (Other routes like /login, /send-otp for signup, etc. are below and unchanged) ---
-
-// SEND OTP FOR REGISTRATION
+// 1. SEND SIGNUP OTP
 router.post("/send-otp", async (req, res) => {
   try {
     const { email, phone } = req.body;
@@ -119,7 +74,7 @@ router.post("/send-otp", async (req, res) => {
   }
 });
 
-// VERIFY OTP AND COMPLETE REGISTRATION
+// 2. VERIFY SIGNUP OTP
 router.post("/verify-and-register", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -137,18 +92,45 @@ router.post("/verify-and-register", async (req, res) => {
   }
 });
 
-// LOGIN
-router.post("/login", async (req, res) => {
+// --- PASSWORD RESET FLOW ---
+
+// 3. FORGOT PASSWORD (SEND OTP)
+router.post("/forgot-password", async (req, res) => {
   try {
-    const { email, phone, password } = req.body;
-    const user = await User.findOne({ $or: [{ email }, { phone }] });
-    if (!user) return res.status(400).json({ error: "User not found" });
-    if (!user.isVerified) return res.status(403).json({ error: "Account not verified.", needsVerification: true });
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) return res.status(400).json({ error: "Invalid password" });
-    res.status(200).json({ message: "Login successful", user: { name: user.name, role: user.role, email: user.email, phone: user.phone }});
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(200).json({ message: "If an account with this email exists, an OTP has been sent." });
+    }
+    const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
+    user.otp = otp;
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+    const msg = { to: email, from: process.env.VERIFIED_EMAIL, subject: 'Your Password Reset OTP for Darzi App', html: `<h1>Your password reset OTP is: ${otp}</h1><p>This OTP will expire in 10 minutes.</p>` };
+    await sgMail.send(msg);
+    res.status(200).json({ message: "An OTP has been sent to your email address." });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in /forgot-password:", err);
+    res.status(500).json({ error: "An error occurred while sending the OTP." });
+  }
+});
+
+// 4. RESET PASSWORD (VERIFY OTP AND UPDATE)
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, password } = req.body;
+    const user = await User.findOne({ email, otp, otpExpires: { $gt: Date.now() } });
+    if (!user) {
+      return res.status(400).json({ error: "Invalid OTP or OTP has expired. Please request a new one." });
+    }
+    user.password = await bcrypt.hash(password, 10);
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+    res.status(200).json({ message: "Password has been successfully reset. You can now log in." });
+  } catch (err) {
+    console.error("Error in /reset-password:", err);
+    res.status(500).json({ error: "An error occurred. Please try again later." });
   }
 });
 
