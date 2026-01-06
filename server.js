@@ -11,29 +11,26 @@ dotenv.config();
 const app = express();
 
 // middleware
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors());
 app.use(express.json());
 
 // routes
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 
-// test route
+// health check
 app.get("/", (req, res) => {
-  res.json({
-    message: "Darzi backend is running ✅",
-    endpoints: ["/api/auth", "/api/orders"],
-  });
+  res.json({ message: "Darzi backend is running ✅" });
 });
 
 // database
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.error(err));
 
-// port
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// IMPORTANT: Render provides PORT
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
