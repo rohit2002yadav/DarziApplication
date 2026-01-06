@@ -4,8 +4,6 @@ import otpGenerator from 'otp-generator';
 import sgMail from '@sendgrid/mail';
 import User from "../models/User.js";
 
-// A function to initialize SendGrid. We will call this from server.js
-// after dotenv has loaded the environment variables.
 export const initializeSendGrid = () => {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
   console.log("✅ SendGrid Initialized");
@@ -13,20 +11,43 @@ export const initializeSendGrid = () => {
 
 const router = express.Router();
 
+// --- NEARBY DISCOVERY (With Distance Calculation) ---
+
+router.get("/tailors/nearby", async (req, res) => {
+  try {
+    const { lat, lng, radius = 5 } = req.query;
+    if (!lat || !lng) return res.status(400).json({ error: "Latitude and Longitude are required" });
+
+    const tailors = await User.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          distanceField: "distance", // This adds a 'distance' field to each result
+          maxDistance: parseFloat(radius) * 1000, // Convert km to meters
+          query: { role: "tailor" },
+          spherical: true
+        }
+      },
+      { $project: { password: 0, otp: 0, otpExpires: 0 } } // Exclude sensitive fields
+    ]);
+
+    res.status(200).json(tailors);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- MAIN USER & DATA ROUTES ---
 
-// GET ALL TAILORS
 router.get("/tailors", async (req, res) => {
   try {
     const tailors = await User.find({ role: "tailor" }).select('-password');
     res.status(200).json(tailors);
   } catch (err) {
-    console.error("Error fetching tailors:", err);
     res.status(500).json({ error: "Failed to fetch tailors." });
   }
 });
 
-// LOGIN
 router.post("/login", async (req, res) => {
   try {
     const { email, phone, password } = req.body;
@@ -35,7 +56,37 @@ router.post("/login", async (req, res) => {
     if (!user.isVerified) return res.status(403).json({ error: "Account not verified.", needsVerification: true });
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(400).json({ error: "Invalid password" });
-    res.status(200).json({ message: "Login successful", user: { name: user.name, role: user.role, email: user.email, phone: user.phone }});
+    res.status(200).json({ message: "Login successful", user: { name: user.name, role: user.role, email: user.email, phone: user.phone, customerDetails: user.customerDetails, tailorDetails: user.tailorDetails }});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- MEASUREMENT PROFILE ROUTES ---
+
+router.post("/measurements", async (req, res) => {
+  try {
+    const { phone, profile } = req.body;
+    const user = await User.findOneAndUpdate(
+      { phone },
+      { $push: { "customerDetails.measurementProfiles": profile } },
+      { new: true }
+    );
+    res.status(200).json(user.customerDetails.measurementProfiles);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/measurements/:phone/:profileId", async (req, res) => {
+  try {
+    const { phone, profileId } = req.params;
+    const user = await User.findOneAndUpdate(
+      { phone },
+      { $pull: { "customerDetails.measurementProfiles": { _id: profileId } } },
+      { new: true }
+    );
+    res.status(200).json(user.customerDetails.measurementProfiles);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -43,38 +94,46 @@ router.post("/login", async (req, res) => {
 
 // --- REGISTRATION FLOW ---
 
-// 1. SEND SIGNUP OTP
 router.post("/send-otp", async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email, phone, role } = req.body;
     let user = await User.findOne({ $or: [{ email }, { phone }] });
+
     if (user && user.isVerified) {
       return res.status(400).json({ error: "A verified account with this email or phone already exists." });
     }
+
     const otp = otpGenerator.generate(6, { upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false });
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
     if (user) {
       user.name = req.body.name;
       user.password = hashedPassword;
+      user.role = role;
       user.otp = otp;
       user.otpExpires = otpExpires;
-      Object.assign(user, req.body);
+      if (role === 'customer') {
+        user.customerDetails = req.body.customerDetails;
+        user.tailorDetails = undefined;
+      } else if (role === 'tailor') {
+        user.tailorDetails = req.body.tailorDetails;
+        user.customerDetails = undefined;
+      }
     } else {
       user = new User({ ...req.body, password: hashedPassword, otp, otpExpires, isVerified: false });
     }
+
     await user.save();
     const msg = { to: email, from: process.env.VERIFIED_EMAIL, subject: 'Your OTP for Darzi App Registration', html: `<h1>Your OTP is ${otp}</h1>` };
     await sgMail.send(msg);
     res.status(200).json({ message: "OTP sent successfully to your email." });
   } catch (err) {
     if (err.code === 11000) return res.status(400).json({ error: "A user with this email or phone number already exists." });
-    console.error("Error in /send-otp:", err);
     res.status(500).json({ error: "Failed to send OTP. Please try again later." });
   }
 });
 
-// 2. VERIFY SIGNUP OTP
 router.post("/verify-and-register", async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -92,9 +151,6 @@ router.post("/verify-and-register", async (req, res) => {
   }
 });
 
-// --- PASSWORD RESET FLOW ---
-
-// 3. FORGOT PASSWORD (SEND OTP)
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -110,12 +166,10 @@ router.post("/forgot-password", async (req, res) => {
     await sgMail.send(msg);
     res.status(200).json({ message: "An OTP has been sent to your email address." });
   } catch (err) {
-    console.error("Error in /forgot-password:", err);
     res.status(500).json({ error: "An error occurred while sending the OTP." });
   }
 });
 
-// 4. RESET PASSWORD (VERIFY OTP AND UPDATE)
 router.post("/reset-password", async (req, res) => {
   try {
     const { email, otp, password } = req.body;
@@ -129,7 +183,6 @@ router.post("/reset-password", async (req, res) => {
     await user.save();
     res.status(200).json({ message: "Password has been successfully reset. You can now log in." });
   } catch (err) {
-    console.error("Error in /reset-password:", err);
     res.status(500).json({ error: "An error occurred. Please try again later." });
   }
 });

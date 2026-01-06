@@ -1,16 +1,32 @@
-# loginpage
+# Darzi Server (Backend)
 
-A new Flutter project.
+This is the backend server for the **Darzi Application**, an on-demand tailoring service platform.  
+The backend is built using **Node.js**, **Express**, and **MongoDB** and provides APIs for authentication, orders, and email OTP verification.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🛠️ Tech Stack
 
-A few resources to get you started if this is your first Flutter project:
+- Node.js
+- Express.js
+- MongoDB (Mongoose)
+- SendGrid (Email OTP)
+- JWT (Authentication)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 📂 Project Structure
+
+darzi_server/
+├── server.js # Main server entry point
+├── package.json
+├── .env # Environment variables (not committed)
+├── routes/
+│ ├── authRoutes.js # Authentication & OTP routes
+│ └── orderRoutes.js # Order related APIs
+├── models/
+│ ├── User.js # User schema
+│ └── Order.js # Order schema
+├── utils/
+│ └── mailer.js # SendGrid email helper
+└── README.md
