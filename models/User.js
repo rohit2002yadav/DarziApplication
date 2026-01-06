@@ -1,46 +1,45 @@
 import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema(
+const orderSchema = new mongoose.Schema(
   {
-    role: { type: String, required: true, enum: ["customer", "tailor"] },
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    phone: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isVerified: { type: Boolean, default: false },
+    customerName: { type: String, required: true },
+    customerPhone: { type: String, required: true },
+    customerEmail: String,
 
-    // Fields for OTP Verification
-    otp: { type: String },
-    otpExpires: { type: Date },
-
-    // Fields for Password Reset
-    resetPasswordToken: { type: String },
-    resetPasswordExpires: { type: Date },
-
-    // Fields for customers
-    customerDetails: {
-      city: String,
-      state: String,
-      landmark: String,
-      pin: String,
-      other: String,
+    tailorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
 
-    // Fields for tailors - EXPANDED STRUCTURE
-    tailorDetails: {
-      shopName: String,
-      profilePictureUrl: String,
-      shopPictureUrl: String,
-      tailorType: String,
-      // New Address Fields for Tailor
+    garmentType: String,
+    items: [String],
+
+    totalAmount: { type: Number, required: true },
+
+    status: {
+      type: String,
+      enum: ["PLACED", "ACCEPTED", "CUTTING", "STITCHING", "READY", "DELIVERED"],
+      default: "PLACED",
+    },
+
+    // 🔴 REQUIRED — this was missing before
+    handoverType: {
+      type: String,
+      enum: ["pickup", "drop"],
+      required: true,
+    },
+
+    // 🔴 MUST be nested object
+    pickup: {
       address: String,
-      city: String,
-      state: String,
-      landmark: String,
-      zipCode: String,
+      date: String,
+      time: String,
     },
+
+    measurements: Object,
   },
   { timestamps: true }
 );
 
-export default mongoose.model("User", userSchema);
+export default mongoose.model("Order", orderSchema);
