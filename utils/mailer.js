@@ -1,14 +1,17 @@
 import sgMail from "@sendgrid/mail";
 
-// Set SendGrid API key from .env
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+if (!process.env.SENDGRID_API_KEY) {
+  console.error("❌ SENDGRID_API_KEY is missing");
+} else {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 /**
  * Send OTP Email
- * @param {string} to - receiver email
- * @param {string} otp - OTP code
+ * @param {string} to
+ * @param {string} otp
  */
-export const sendOtpEmail = async (to, otp) => {
+const sendOtpEmail = async (to, otp) => {
   try {
     const msg = {
       to,
@@ -27,10 +30,15 @@ export const sendOtpEmail = async (to, otp) => {
     };
 
     await sgMail.send(msg);
-    console.log("OTP email sent to:", to);
+    console.log("✅ OTP email sent to:", to);
     return true;
   } catch (error) {
-    console.error("SendGrid Error:", error.response?.body || error.message);
+    console.error(
+      "❌ SendGrid Error:",
+      error.response?.body || error.message
+    );
     return false;
   }
 };
+
+export default sendOtpEmail;

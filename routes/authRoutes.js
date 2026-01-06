@@ -1,59 +1,94 @@
 import express from "express";
-import otpGenerator from "otp-generator";
+import bcrypt from "bcryptjs";
 import User from "../models/User.js";
-import { sendOtpEmail } from "../utils/mailer.js";
+import sendOtpEmail from "../utils/mailer.js";
 
 const router = express.Router();
 
 /**
- * @route   POST /api/auth/send-otp
- * @desc    Send OTP to email
+ * SEND OTP
+ * POST /api/auth/send-otp
  */
 router.post("/send-otp", async (req, res) => {
   try {
-    console.log("🔥 /api/auth/send-otp HIT");
-    console.log("Request body:", req.body);
-
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    // Generate 6-digit OTP
-    const otp = otpGenerator.generate(6, {
-      upperCaseAlphabets: false,
-      lowerCaseAlphabets: false,
-      specialChars: false,
-    });
+    // generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otp, 10);
 
-    console.log("Generated OTP:", otp);
+    // save or update user
+    let user = await User.findOne({ email });
 
-    // Save or update OTP in DB
-    await User.findOneAndUpdate(
-      { email },
-      { otp, otpExpiry: Date.now() + 5 * 60 * 1000 },
-      { upsert: true, new: true }
-    );
-
-    // Send OTP email
-    const sent = await sendOtpEmail(email, otp);
-    console.log("SendGrid result:", sent);
-
-    if (!sent) {
-      return res.status(500).json({
-        error: "Failed to send OTP. Please try again later.",
+    if (!user) {
+      user = new User({
+        email,
+        otp: hashedOtp,
+        otpExpires: Date.now() + 5 * 60 * 1000, // 5 minutes
+        isVerified: false,
       });
+    } else {
+      user.otp = hashedOtp;
+      user.otpExpires = Date.now() + 5 * 60 * 1000;
     }
 
-    return res.json({
-      message: "OTP sent successfully",
-    });
+    await user.save();
+
+    const emailSent = await sendOtpEmail(email, otp);
+
+    if (!emailSent) {
+      return res.status(500).json({ message: "Failed to send OTP email" });
+    }
+
+    res.json({ message: "OTP sent successfully" });
   } catch (error) {
-    console.error("❌ send-otp error:", error);
-    return res.status(500).json({
-      error: "Internal server error",
-    });
+    console.error("Send OTP error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * VERIFY OTP
+ * POST /api/auth/verify-otp
+ */
+router.post("/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required" });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user || !user.otp) {
+      return res.status(400).json({ message: "Invalid request" });
+    }
+
+    if (user.otpExpires < Date.now()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    const isMatch = await bcrypt.compare(otp, user.otp);
+
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    await user.save();
+
+    res.json({ message: "OTP verified successfully", user });
+  } catch (error) {
+    console.error("Verify OTP error:", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
