@@ -1,94 +1,110 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
-import sendOtpEmail from "../utils/mailer.js";
+import { sendOtpEmail } from "../utils/mailer.js";
 
 const router = express.Router();
 
-/**
- * SEND OTP
- * POST /api/auth/send-otp
- */
-router.post("/send-otp", async (req, res) => {
+// --- NEARBY DISCOVERY ---
+router.get("/tailors/nearby", async (req, res) => {
   try {
-    const { email } = req.body;
+    const { lat, lng, radius = 5 } = req.query;
+    if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
-
-    // generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashedOtp = await bcrypt.hash(otp, 10);
-
-    // save or update user
-    let user = await User.findOne({ email });
-
-    if (!user) {
-      user = new User({
-        email,
-        otp: hashedOtp,
-        otpExpires: Date.now() + 5 * 60 * 1000, // 5 minutes
-        isVerified: false,
-      });
-    } else {
-      user.otp = hashedOtp;
-      user.otpExpires = Date.now() + 5 * 60 * 1000;
-    }
-
-    await user.save();
-
-    const emailSent = await sendOtpEmail(email, otp);
-
-    if (!emailSent) {
-      return res.status(500).json({ message: "Failed to send OTP email" });
-    }
-
-    res.json({ message: "OTP sent successfully" });
-  } catch (error) {
-    console.error("Send OTP error:", error);
-    res.status(500).json({ message: "Server error" });
+    const tailors = await User.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          distanceField: "distance",
+          maxDistance: parseFloat(radius) * 1000, 
+          query: { role: "tailor" },
+          spherical: true
+        }
+      },
+      { $project: { password: 0, otp: 0, otpExpires: 0 } }
+    ]);
+    res.status(200).json(tailors);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * VERIFY OTP
- * POST /api/auth/verify-otp
- */
-router.post("/verify-otp", async (req, res) => {
+// --- LOGIN ---
+router.post("/login", async (req, res) => {
+  try {
+    const { email, phone, password } = req.body;
+    const user = await User.findOne({ $or: [{ email }, { phone }] });
+    if (!user) return res.status(400).json({ error: "User not found" });
+    if (!user.isVerified) return res.status(403).json({ error: "Please verify your email first.", needsVerification: true });
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return res.status(400).json({ error: "Invalid password" });
+    
+    res.status(200).json({ message: "Login successful", user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- SEND OTP ---
+router.post("/send-otp", async (req, res) => {
+  try {
+    const { email, phone, name, password, role } = req.body;
+
+    if (!email || !phone || !name || !password) {
+      return res.status(400).json({ error: "All fields (name, email, phone, password) are required." });
+    }
+
+    let user = await User.findOne({ $or: [{ email }, { phone }] });
+    if (user && user.isVerified) {
+      return res.status(400).json({ error: "User already exists and is verified." });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (!user) {
+      // Create new user with ALL required fields
+      user = new User({
+        ...req.body,
+        password: hashedPassword,
+        otp,
+        otpExpires: Date.now() + 10 * 60 * 1000,
+        isVerified: false
+      });
+    } else {
+      // Update existing unverified user
+      user.name = name;
+      user.password = hashedPassword;
+      user.phone = phone;
+      user.otp = otp;
+      user.otpExpires = Date.now() + 10 * 60 * 1000;
+    }
+
+    await user.save();
+    await sendOtpEmail(email, otp);
+    res.status(200).json({ message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("Send OTP error:", err);
+    res.status(500).json({ error: "Failed to process request." });
+  }
+});
+
+// --- VERIFY OTP ---
+router.post("/verify-and-register", async (req, res) => {
   try {
     const { email, otp } = req.body;
-
-    if (!email || !otp) {
-      return res.status(400).json({ message: "Email and OTP are required" });
+    const user = await User.findOne({ email, isVerified: false });
+    if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
+      return res.status(400).json({ error: "Invalid or expired OTP." });
     }
-
-    const user = await User.findOne({ email });
-
-    if (!user || !user.otp) {
-      return res.status(400).json({ message: "Invalid request" });
-    }
-
-    if (user.otpExpires < Date.now()) {
-      return res.status(400).json({ message: "OTP expired" });
-    }
-
-    const isMatch = await bcrypt.compare(otp, user.otp);
-
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-
     user.isVerified = true;
     user.otp = undefined;
     user.otpExpires = undefined;
-
     await user.save();
-
-    res.json({ message: "OTP verified successfully", user });
-  } catch (error) {
-    console.error("Verify OTP error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(201).json({ message: "Registration successful!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
