@@ -11,17 +11,19 @@ const userSchema = new mongoose.Schema(
     otp: { type: String },
     otpExpires: { type: Date },
     
-    // Customer specific data (Matches your Flutter Signup screen)
+    // Unified location for GeoSpatial queries
+    location: {
+      type: { type: String, default: 'Point' },
+      coordinates: { type: [Number], default: [73.8567, 18.5204] } // [longitude, latitude]
+    },
+
+    // Customer specific data
     customerDetails: {
       address: String,
       city: String,
       state: String,
       landmark: String,
-      pin: String,
-      location: {
-        type: { type: String, default: 'Point' },
-        coordinates: { type: [Number], default: [73.8567, 18.5204] } // Default to Pune [lng, lat]
-      }
+      pin: String
     },
 
     // Tailor specific data
@@ -34,13 +36,16 @@ const userSchema = new mongoose.Schema(
       zipCode: String,
       landmark: String,
       rating: { type: Number, default: 4.5 },
-      isAvailable: { type: Boolean, default: true }
+      isAvailable: { type: Boolean, default: true },
+      profilePictureUrl: String,
+      shopPictureUrl: String
     }
   },
   { timestamps: true }
 );
 
-userSchema.index({ "customerDetails.location": "2dsphere" });
+// Index for nearby searching
+userSchema.index({ "location": "2dsphere" });
 
 const User = mongoose.model("User", userSchema);
 export default User;
