@@ -78,13 +78,22 @@ router.post("/send-otp", async (req, res) => {
       return res.status(400).json({ error: "All fields are required." });
     }
 
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
-    if (user && user.isVerified) {
-      return res.status(400).json({ error: "User already exists." });
+    // DEBUG: Check what's happening
+    const existingEmail = await User.findOne({ email });
+    const existingPhone = await User.findOne({ phone });
+
+    if (existingEmail && existingEmail.isVerified) {
+      return res.status(400).json({ error: "Email already registered and verified." });
+    }
+    if (existingPhone && existingPhone.isVerified) {
+      return res.status(400).json({ error: "Phone number already registered and verified." });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Find if there's an unverified account to update
+    let user = await User.findOne({ $or: [{ email }, { phone }], isVerified: false });
 
     if (!user) {
       user = new User({
@@ -98,9 +107,9 @@ router.post("/send-otp", async (req, res) => {
       user.name = name;
       user.password = hashedPassword;
       user.phone = phone;
+      user.email = email;
       user.otp = otp;
       user.otpExpires = Date.now() + 10 * 60 * 1000;
-      // Update location/details if provided
       if (req.body.location) user.location = req.body.location;
       if (req.body.customerDetails) user.customerDetails = req.body.customerDetails;
       if (req.body.tailorDetails) user.tailorDetails = req.body.tailorDetails;
@@ -110,7 +119,8 @@ router.post("/send-otp", async (req, res) => {
     await sendOtpEmail(email, otp);
     res.status(200).json({ message: "OTP sent successfully" });
   } catch (err) {
-    res.status(500).json({ error: "Failed to process request." });
+    console.error("Signup error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
