@@ -56,8 +56,10 @@ router.post("/login", async (req, res) => {
     if (!user) return res.status(400).json({ error: "User not found" });
     if (!user.isVerified) return res.status(403).json({ error: "Please verify your email first.", needsVerification: true });
     
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) return res.status(400).json({ error: "Invalid password" });
+    if (password) {
+        const isValid = await bcrypt.compare(password, user.password);
+        if (!isValid) return res.status(400).json({ error: "Invalid password" });
+    }
     
     res.status(200).json({ 
       message: "Login successful", 
@@ -74,45 +76,34 @@ router.post("/send-otp", async (req, res) => {
   try {
     const { email, phone, name, password, role } = req.body;
 
-    if (!email || !phone || !name || !password) {
-      return res.status(400).json({ error: "All fields are required." });
+    if (!email || !phone || !name) {
+      return res.status(400).json({ error: "Name, Email, and Phone are required." });
     }
 
-    // DEBUG: Check what's happening
-    const existingEmail = await User.findOne({ email });
-    const existingPhone = await User.findOne({ phone });
-
-    if (existingEmail && existingEmail.isVerified) {
-      return res.status(400).json({ error: "Email already registered and verified." });
-    }
-    if (existingPhone && existingPhone.isVerified) {
-      return res.status(400).json({ error: "Phone number already registered and verified." });
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    if (existingUser && existingUser.isVerified) {
+      return res.status(400).json({ error: "Account already exists with this email or phone." });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    let updateData = {
+      ...req.body,
+      otp,
+      otpExpires: Date.now() + 10 * 60 * 1000,
+      isVerified: false,
+      status: "ACTIVE" // Set all to ACTIVE as per user request
+    };
 
-    // Find if there's an unverified account to update
-    let user = await User.findOne({ $or: [{ email }, { phone }], isVerified: false });
+    if (password) {
+        updateData.password = await bcrypt.hash(password, 10);
+    }
 
-    if (!user) {
-      user = new User({
-        ...req.body,
-        password: hashedPassword,
-        otp,
-        otpExpires: Date.now() + 10 * 60 * 1000,
-        isVerified: false
-      });
+    let user;
+    if (!existingUser) {
+      user = new User(updateData);
     } else {
-      user.name = name;
-      user.password = hashedPassword;
-      user.phone = phone;
-      user.email = email;
-      user.otp = otp;
-      user.otpExpires = Date.now() + 10 * 60 * 1000;
-      if (req.body.location) user.location = req.body.location;
-      if (req.body.customerDetails) user.customerDetails = req.body.customerDetails;
-      if (req.body.tailorDetails) user.tailorDetails = req.body.tailorDetails;
+      user = Object.assign(existingUser, updateData);
     }
 
     await user.save();
@@ -135,6 +126,7 @@ router.post("/verify-and-register", async (req, res) => {
     user.isVerified = true;
     user.otp = undefined;
     user.otpExpires = undefined;
+    user.status = "ACTIVE"; // Ensure it is ACTIVE
     await user.save();
     
     res.status(201).json({ 
@@ -142,45 +134,6 @@ router.post("/verify-and-register", async (req, res) => {
       user,
       token: generateToken(user._id)
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- FORGOT PASSWORD ---
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: "No user found." });
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000;
-    
-    await user.save();
-    await sendOtpEmail(email, otp);
-    res.status(200).json({ message: "Reset OTP sent." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- RESET PASSWORD ---
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { email, otp, newPassword } = req.body;
-    const user = await User.findOne({ email });
-    if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
-      return res.status(400).json({ error: "Invalid or expired OTP." });
-    }
-
-    user.password = await bcrypt.hash(newPassword, 10);
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    user.isVerified = true; 
-    await user.save();
-    res.status(200).json({ message: "Password updated!" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

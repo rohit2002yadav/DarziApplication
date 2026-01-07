@@ -7,7 +7,8 @@ const STATUS_FLOW = {
   ACCEPTED: "CUTTING",
   CUTTING: "STITCHING",
   STITCHING: "FINISHING",
-  FINISHING: "DELIVERED",
+  FINISHING: "READY",
+  READY: "DELIVERED",
 };
 
 // CREATE ORDER
@@ -26,7 +27,7 @@ router.get("/customer", async (req, res) => {
   const { phone } = req.query;
   if (!phone) return res.status(400).json({ error: "Phone required" });
 
-  const orders = await Order.find({ customerPhone: phone });
+  const orders = await Order.find({ customerPhone: phone }).sort({ createdAt: -1 });
   res.json(orders);
 });
 
@@ -38,39 +39,74 @@ router.get("/tailor", async (req, res) => {
   let query = { tailorId };
 
   if (status === "ONGOING") {
-    query.status = { $in: ["ACCEPTED", "CUTTING", "STITCHING", "FINISHING"] };
+    query.status = { $in: ["ACCEPTED", "CUTTING", "STITCHING", "FINISHING", "READY"] };
   } else if (status) {
     query.status = status;
   }
 
-  const orders = await Order.find(query);
+  const orders = await Order.find(query).sort({ updatedAt: -1 });
   res.json(orders);
+});
+
+// ANALYTICS
+router.get("/analytics", async (req, res) => {
+  try {
+    const { tailorId } = req.query;
+    // For now, return a simple today count. In production, filter by tailorId and date.
+    const todayCount = await Order.countDocuments({
+      createdAt: { $gte: new Date().setHours(0, 0, 0, 0) }
+    });
+    res.json({ todayOrders: todayCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ACCEPT ORDER
 router.post("/:id/accept", async (req, res) => {
-  const order = await Order.findByIdAndUpdate(
-    req.params.id,
-    { status: "ACCEPTED" },
-    { new: true }
-  );
+  try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status: "ACCEPTED" },
+      { new: true }
+    );
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  res.json(order);
+// REJECT ORDER
+router.post("/:id/reject", async (req, res) => {
+  try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status: "REJECTED" },
+      { new: true }
+    );
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // UPDATE STATUS
 router.post("/:id/update-status", async (req, res) => {
-  const order = await Order.findById(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-  const next = STATUS_FLOW[order.status];
-  if (!next) return res.status(400).json({ error: "Cannot update further" });
+    const next = STATUS_FLOW[order.status];
+    if (!next) return res.status(400).json({ error: "No further status updates available" });
 
-  order.status = next;
-  await order.save();
-
-  res.json(order);
+    order.status = next;
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;
