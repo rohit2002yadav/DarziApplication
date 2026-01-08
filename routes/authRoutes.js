@@ -26,10 +26,10 @@ router.get("/tailors", async (req, res) => {
 // --- NEARBY DISCOVERY (Optimized Flow) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
-    const { lat, lng, radius = 1 } = req.query; // Default 1km as per spec
+    const { lat, lng, radius = 1 } = req.query; 
     if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
 
-    const maxDist = parseFloat(radius) * 1000; // Convert km to meters
+    const maxDist = parseFloat(radius) * 1000; 
 
     const tailors = await User.aggregate([
       {
@@ -40,7 +40,8 @@ router.get("/tailors/nearby", async (req, res) => {
           query: { 
             role: "tailor", 
             status: "ACTIVE",
-            "tailorDetails.isAvailable": true 
+            // Permissive check: available if true OR if field doesn't exist yet
+            "tailorDetails.isAvailable": { $ne: false } 
           },
           spherical: true,
           key: "location"
@@ -52,7 +53,7 @@ router.get("/tailors/nearby", async (req, res) => {
           name: 1,
           shopName: "$tailorDetails.shopName",
           rating: "$tailorDetails.rating",
-          distance: { $divide: ["$distance", 1000] }, // Convert meters back to km for clean response
+          distance: { $divide: ["$distance", 1000] }, 
           basePrice: "$tailorDetails.pricing.basePrice",
           homePickup: "$tailorDetails.homePickup",
           specializations: "$tailorDetails.specializations",
