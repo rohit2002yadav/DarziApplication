@@ -48,12 +48,14 @@ router.get("/tailor", async (req, res) => {
   res.json(orders);
 });
 
-// ANALYTICS
+// ANALYTICS (Fixed to filter by tailorId)
 router.get("/analytics", async (req, res) => {
   try {
     const { tailorId } = req.query;
-    // For now, return a simple today count. In production, filter by tailorId and date.
+    if (!tailorId) return res.status(400).json({ error: "tailorId required" });
+
     const todayCount = await Order.countDocuments({
+      tailorId,
       createdAt: { $gte: new Date().setHours(0, 0, 0, 0) }
     });
     res.json({ todayOrders: todayCount });
