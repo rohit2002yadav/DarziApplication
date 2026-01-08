@@ -23,15 +23,16 @@ router.get("/tailors", async (req, res) => {
   }
 });
 
-// --- NEARBY DISCOVERY (Final Logic: 0-5 KM) ---
+// --- NEARBY DISCOVERY (Debug Mode) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
     const { lat, lng } = req.query;
     if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
 
-    // Enforce max radius = 5 km as per specification
     const radius = Math.min(parseFloat(req.query.radius) || 1, 5);
-    const maxDist = radius * 1000; // km to meters
+    const maxDist = radius * 1000; 
+
+    console.log(`📍 Searching tailors near: [${lng}, ${lat}] within ${radius}km`);
 
     const tailors = await User.aggregate([
       {
@@ -42,7 +43,7 @@ router.get("/tailors/nearby", async (req, res) => {
           query: { 
             role: "tailor", 
             status: "ACTIVE",
-            "tailorDetails.isAvailable": { $ne: false } 
+            isVerified: true // Only verified tailors
           },
           spherical: true,
           key: "location"
@@ -54,7 +55,7 @@ router.get("/tailors/nearby", async (req, res) => {
           name: 1,
           shopName: "$tailorDetails.shopName",
           rating: "$tailorDetails.rating",
-          distance: { $divide: ["$distance", 1000] }, // Convert to km
+          distance: { $divide: ["$distance", 1000] }, 
           basePrice: "$tailorDetails.pricing.basePrice",
           homePickup: "$tailorDetails.homePickup",
           specializations: "$tailorDetails.specializations",
@@ -63,13 +64,15 @@ router.get("/tailors/nearby", async (req, res) => {
       }
     ]);
 
+    console.log(`✅ Found ${tailors.length} tailors`);
+
     res.status(200).json({
       radius: radius,
       count: tailors.length,
       tailors: tailors
     });
   } catch (err) {
-    console.error("GeoNear Error:", err.message);
+    console.error("❌ GeoNear Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
