@@ -23,13 +23,15 @@ router.get("/tailors", async (req, res) => {
   }
 });
 
-// --- NEARBY DISCOVERY (Optimized Flow) ---
+// --- NEARBY DISCOVERY (Final Logic: 0-5 KM) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
-    const { lat, lng, radius = 1 } = req.query; 
+    const { lat, lng } = req.query;
     if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
 
-    const maxDist = parseFloat(radius) * 1000; 
+    // Enforce max radius = 5 km as per specification
+    const radius = Math.min(parseFloat(req.query.radius) || 1, 5);
+    const maxDist = radius * 1000; // km to meters
 
     const tailors = await User.aggregate([
       {
@@ -40,7 +42,6 @@ router.get("/tailors/nearby", async (req, res) => {
           query: { 
             role: "tailor", 
             status: "ACTIVE",
-            // Permissive check: available if true OR if field doesn't exist yet
             "tailorDetails.isAvailable": { $ne: false } 
           },
           spherical: true,
@@ -53,7 +54,7 @@ router.get("/tailors/nearby", async (req, res) => {
           name: 1,
           shopName: "$tailorDetails.shopName",
           rating: "$tailorDetails.rating",
-          distance: { $divide: ["$distance", 1000] }, 
+          distance: { $divide: ["$distance", 1000] }, // Convert to km
           basePrice: "$tailorDetails.pricing.basePrice",
           homePickup: "$tailorDetails.homePickup",
           specializations: "$tailorDetails.specializations",
@@ -63,7 +64,7 @@ router.get("/tailors/nearby", async (req, res) => {
     ]);
 
     res.status(200).json({
-      radius: parseFloat(radius),
+      radius: radius,
       count: tailors.length,
       tailors: tailors
     });
@@ -164,7 +165,7 @@ router.post("/verify-and-register", async (req, res) => {
   }
 });
 
-// --- FORGOT PASSWORD ---
+// --- FORGOT PASSWORD (Send OTP) ---
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
