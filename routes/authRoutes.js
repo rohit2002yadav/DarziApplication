@@ -16,34 +16,58 @@ const generateToken = (id) => {
 // --- ALL TAILORS ---
 router.get("/tailors", async (req, res) => {
   try {
-    const tailors = await User.find({ role: "tailor" }, { password: 0, otp: 0, otpExpires: 0 });
+    const tailors = await User.find({ role: "tailor", status: "ACTIVE" }, { password: 0, otp: 0, otpExpires: 0 });
     res.status(200).json(tailors);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// --- NEARBY DISCOVERY ---
+// --- NEARBY DISCOVERY (Optimized Flow) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
-    const { lat, lng, radius = 5 } = req.query;
+    const { lat, lng, radius = 1 } = req.query; // Default 1km as per spec
     if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
+
+    const maxDist = parseFloat(radius) * 1000; // Convert km to meters
 
     const tailors = await User.aggregate([
       {
         $geoNear: {
           near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
           distanceField: "distance",
-          maxDistance: parseFloat(radius) * 1000, 
-          query: { role: "tailor" },
+          maxDistance: maxDist, 
+          query: { 
+            role: "tailor", 
+            status: "ACTIVE",
+            "tailorDetails.isAvailable": true 
+          },
           spherical: true,
           key: "location"
         }
       },
-      { $project: { password: 0, otp: 0, otpExpires: 0 } }
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          shopName: "$tailorDetails.shopName",
+          rating: "$tailorDetails.rating",
+          distance: { $divide: ["$distance", 1000] }, // Convert meters back to km for clean response
+          basePrice: "$tailorDetails.pricing.basePrice",
+          homePickup: "$tailorDetails.homePickup",
+          specializations: "$tailorDetails.specializations",
+          profilePictureUrl: "$tailorDetails.profilePictureUrl"
+        }
+      }
     ]);
-    res.status(200).json(tailors);
+
+    res.status(200).json({
+      radius: parseFloat(radius),
+      count: tailors.length,
+      tailors: tailors
+    });
   } catch (err) {
+    console.error("GeoNear Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -92,7 +116,7 @@ router.post("/send-otp", async (req, res) => {
       otp,
       otpExpires: Date.now() + 10 * 60 * 1000,
       isVerified: false,
-      status: "ACTIVE"
+      status: "ACTIVE" 
     };
 
     if (password) {
@@ -115,7 +139,31 @@ router.post("/send-otp", async (req, res) => {
   }
 });
 
-// --- FORGOT PASSWORD (Send OTP) ---
+// --- VERIFY OTP & REGISTER ---
+router.post("/verify-and-register", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const user = await User.findOne({ email, isVerified: false });
+    if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
+      return res.status(400).json({ error: "Invalid or expired OTP." });
+    }
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    user.status = "ACTIVE"; 
+    await user.save();
+    
+    res.status(201).json({ 
+      message: "Registration successful!",
+      user,
+      token: generateToken(user._id)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- FORGOT PASSWORD ---
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -152,30 +200,6 @@ router.post("/reset-password", async (req, res) => {
     user.otpExpires = undefined;
     await user.save();
     res.status(200).json({ message: "Password updated successfully!" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- VERIFY OTP & REGISTER ---
-router.post("/verify-and-register", async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    const user = await User.findOne({ email, isVerified: false });
-    if (!user || user.otp !== otp || user.otpExpires < Date.now()) {
-      return res.status(400).json({ error: "Invalid or expired OTP." });
-    }
-    user.isVerified = true;
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    user.status = "ACTIVE"; 
-    await user.save();
-    
-    res.status(201).json({ 
-      message: "Registration successful!",
-      user,
-      token: generateToken(user._id)
-    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
