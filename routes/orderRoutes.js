@@ -8,13 +8,15 @@ const STATUS_FLOW = {
   CUTTING: "STITCHING",
   STITCHING: "FINISHING",
   FINISHING: "READY",
-  READY: "DELIVERED",
+  READY: "OUT_FOR_DELIVERY",
 };
 
 // CREATE ORDER
 router.post("/", async (req, res) => {
   try {
-    const order = new Order(req.body);
+    // Generate a simple 4-digit OTP for delivery
+    const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    const order = new Order({ ...req.body, deliveryOtp });
     const saved = await order.save();
     res.status(201).json(saved);
   } catch (err) {
@@ -39,7 +41,7 @@ router.get("/tailor", async (req, res) => {
   let query = { tailorId };
 
   if (status === "ONGOING") {
-    query.status = { $in: ["ACCEPTED", "CUTTING", "STITCHING", "FINISHING", "READY"] };
+    query.status = { $in: ["ACCEPTED", "CUTTING", "STITCHING", "FINISHING", "READY", "OUT_FOR_DELIVERY"] };
   } else if (status) {
     query.status = status;
   }
@@ -48,7 +50,7 @@ router.get("/tailor", async (req, res) => {
   res.json(orders);
 });
 
-// ANALYTICS (Fixed to filter by tailorId)
+// ANALYTICS
 router.get("/analytics", async (req, res) => {
   try {
     const { tailorId } = req.query;
@@ -67,11 +69,7 @@ router.get("/analytics", async (req, res) => {
 // ACCEPT ORDER
 router.post("/:id/accept", async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: "ACCEPTED" },
-      { new: true }
-    );
+    const order = await Order.findByIdAndUpdate(req.params.id, { status: "ACCEPTED" }, { new: true });
     if (!order) return res.status(404).json({ error: "Order not found" });
     res.json(order);
   } catch (err) {
@@ -82,11 +80,7 @@ router.post("/:id/accept", async (req, res) => {
 // REJECT ORDER
 router.post("/:id/reject", async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: "REJECTED" },
-      { new: true }
-    );
+    const order = await Order.findByIdAndUpdate(req.params.id, { status: "REJECTED" }, { new: true });
     if (!order) return res.status(404).json({ error: "Order not found" });
     res.json(order);
   } catch (err) {
@@ -104,6 +98,24 @@ router.post("/:id/update-status", async (req, res) => {
     if (!next) return res.status(400).json({ error: "No further status updates available" });
 
     order.status = next;
+    await order.save();
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// VERIFY DELIVERY OTP
+router.post("/:id/verify-delivery", async (req, res) => {
+  try {
+    const { otp } = req.body;
+    const order = await Order.findById(req.params.id);
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    if (order.status !== 'OUT_FOR_DELIVERY') return res.status(400).json({ error: "Order is not out for delivery" });
+    if (order.deliveryOtp !== otp) return res.status(400).json({ error: "Invalid OTP" });
+
+    order.status = "DELIVERED";
     await order.save();
     res.json(order);
   } catch (err) {
