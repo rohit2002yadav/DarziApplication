@@ -23,7 +23,7 @@ router.get("/tailors", async (req, res) => {
   }
 });
 
-// --- NEARBY DISCOVERY (Debug Mode) ---
+// --- NEARBY DISCOVERY (Corrected) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
     const { lat, lng } = req.query;
@@ -43,7 +43,6 @@ router.get("/tailors/nearby", async (req, res) => {
           query: { 
             role: "tailor", 
             status: "ACTIVE",
-            isVerified: true // Only verified tailors
           },
           spherical: true,
           key: "location"
