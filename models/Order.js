@@ -30,31 +30,35 @@ const orderSchema = new mongoose.Schema(
       timeSlot: String,
     },
     
-    // *** THE FIX: Implement the exact Deposit Model schema ***
+    // *** THE FIX: Implement the final, detailed payment schema ***
     payment: {
+      totalAmount: { type: Number, required: true },
       depositAmount: { type: Number, required: true },
+      remainingAmount: { type: Number, required: true },
       depositMode: { type: String, enum: ["CASH", "ONLINE"] },
       depositStatus: { type: String, enum: ["PENDING", "PAID"], default: "PENDING" },
-      remainingAmount: { type: Number, required: true },
-      totalAmount: { type: Number, required: true },
+      // New, more detailed payment status
+      paymentStatus: { 
+        type: String, 
+        enum: ["PENDING_DEPOSIT", "DEPOSIT_PAID", "PAID"], 
+        default: "PENDING_DEPOSIT" 
+      },
     },
 
     status: {
       type: String,
       enum: [
-        "PENDING_DEPOSIT", // Initial status
-        "PLACED", 
+        "PLACED", // Initial state before payment confirmation
         "ACCEPTED", 
         "CUTTING", 
         "STITCHING", 
         "FINISHING", 
         "READY",
-        "OUT_FOR_DELIVERY", 
         "DELIVERED", 
         "REJECTED", 
         "CANCELLED",
       ],
-      default: "PENDING_DEPOSIT",
+      default: "PLACED",
     },
     deliveryOtp: { type: String },
   },
