@@ -23,23 +23,38 @@ const orderSchema = new mongoose.Schema(
       quantity: { type: Number },
     },
 
-    fabricCost: { type: Number, default: 0 },
-    stitchingCost: { type: Number },
-    totalAmount: { type: Number, required: true },
-
     handoverType: { type: String, enum: ["pickup", "drop"], required: true },
     pickup: {
       address: String,
       date: String,
-      timeSlot: String, // Corrected field name
+      timeSlot: String,
     },
+    
+    // *** THE FIX: Implement the exact Deposit Model schema ***
+    payment: {
+      depositAmount: { type: Number, required: true },
+      depositMode: { type: String, enum: ["CASH", "ONLINE"] },
+      depositStatus: { type: String, enum: ["PENDING", "PAID"], default: "PENDING" },
+      remainingAmount: { type: Number, required: true },
+      totalAmount: { type: Number, required: true },
+    },
+
     status: {
       type: String,
       enum: [
-        "PLACED", "ACCEPTED", "CUTTING", "STITCHING", "FINISHING", "READY",
-        "OUT_FOR_DELIVERY", "DELIVERED", "REJECTED", "CANCELLED",
+        "PENDING_DEPOSIT", // Initial status
+        "PLACED", 
+        "ACCEPTED", 
+        "CUTTING", 
+        "STITCHING", 
+        "FINISHING", 
+        "READY",
+        "OUT_FOR_DELIVERY", 
+        "DELIVERED", 
+        "REJECTED", 
+        "CANCELLED",
       ],
-      default: "PLACED",
+      default: "PENDING_DEPOSIT",
     },
     deliveryOtp: { type: String },
   },

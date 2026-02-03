@@ -13,7 +13,7 @@ const generateToken = (id) => {
   return jwt.sign({ id }, JWT_SECRET, { expiresIn: "30d" });
 };
 
-// --- ALL TAILORS ---
+// --- ALL TAILORS (for fallback or admin purposes) ---
 router.get("/tailors", async (req, res) => {
   try {
     const tailors = await User.find({ role: "tailor", status: "ACTIVE" }, { password: 0, otp: 0, otpExpires: 0 });
@@ -23,53 +23,60 @@ router.get("/tailors", async (req, res) => {
   }
 });
 
-// --- NEARBY DISCOVERY (Corrected) ---
+// --- NEARBY DISCOVERY (With Capability Filtering) ---
 router.get("/tailors/nearby", async (req, res) => {
   try {
-    const { lat, lng } = req.query;
+    const { lat, lng, garmentType, isTailorProvidingFabric } = req.query;
     if (!lat || !lng) return res.status(400).json({ error: "Lat/Lng required" });
 
     const radius = Math.min(parseFloat(req.query.radius) || 1, 5);
-    const maxDist = radius * 1000; 
+    const maxDist = radius * 1000; // Convert km to meters
 
-    console.log(`📍 Searching tailors near: [${lng}, ${lat}] within ${radius}km`);
-
-    const tailors = await User.aggregate([
+    // Base query for geo-location
+    let pipeline = [
       {
         $geoNear: {
           near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
           distanceField: "distance",
-          maxDistance: maxDist, 
-          query: { 
-            role: "tailor", 
-            status: "ACTIVE",
-          },
+          maxDistance: maxDist,
+          query: { role: "tailor", status: "ACTIVE" },
           spherical: true,
           key: "location"
         }
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          shopName: "$tailorDetails.shopName",
-          rating: "$tailorDetails.rating",
-          distance: { $divide: ["$distance", 1000] }, 
-          basePrice: "$tailorDetails.pricing.basePrice",
-          homePickup: "$tailorDetails.homePickup",
-          specializations: "$tailorDetails.specializations",
-          profilePictureUrl: "$tailorDetails.profilePictureUrl"
-        }
       }
-    ]);
+    ];
 
-    console.log(`✅ Found ${tailors.length} tailors`);
+    // Add capability filtering stages
+    let matchConditions = {};
+    if (garmentType) {
+      matchConditions["tailorDetails.specializations"] = garmentType;
+    }
+    if (isTailorProvidingFabric === 'true') {
+      matchConditions["tailorDetails.providesFabric"] = true;
+    }
+
+    if (Object.keys(matchConditions).length > 0) {
+      pipeline.push({ $match: matchConditions });
+    }
+
+    // Final projection to shape the output data
+    pipeline.push({
+      $project: {
+        _id: 1,
+        name: 1,
+        distance: { $divide: ["$distance", 1000] }, // Convert meters to km
+        tailorDetails: 1,
+      }
+    });
+
+    const tailors = await User.aggregate(pipeline);
 
     res.status(200).json({
       radius: radius,
       count: tailors.length,
       tailors: tailors
     });
+
   } catch (err) {
     console.error("❌ GeoNear Error:", err.message);
     res.status(500).json({ error: err.message });
@@ -118,7 +125,7 @@ router.post("/send-otp", async (req, res) => {
     let updateData = {
       ...req.body,
       otp,
-      otpExpires: Date.now() + 10 * 60 * 1000,
+      otpExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
       isVerified: false,
       status: "ACTIVE" 
     };
