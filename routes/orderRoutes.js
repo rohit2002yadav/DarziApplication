@@ -39,6 +39,8 @@ router.get("/tailor", async (req, res) => {
   let query = { tailorId };
   if (status === "ONGOING") {
     query.status = { $in: ["ACCEPTED", "CUTTING", "STITCHING", "FINISHING", "READY"] };
+  } else if (status === "PLACED") { // THE FIX
+    query.status = "PLACED";
   } else if (status) {
     query.status = status;
   }
