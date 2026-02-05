@@ -6,6 +6,7 @@ const orderSchema = new mongoose.Schema(
     customerPhone: { type: String, required: true },
     customerEmail: { type: String },
     tailorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    tailorName: { type: String, required: true }, // THE FIX
     garmentType: { type: String, required: true },
     items: { type: [String], default: [] },
     measurements: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -30,14 +31,12 @@ const orderSchema = new mongoose.Schema(
       timeSlot: String,
     },
     
-    // *** THE FIX: Implement the final, detailed payment schema ***
     payment: {
       totalAmount: { type: Number, required: true },
       depositAmount: { type: Number, required: true },
       remainingAmount: { type: Number, required: true },
       depositMode: { type: String, enum: ["CASH", "ONLINE"] },
       depositStatus: { type: String, enum: ["PENDING", "PAID"], default: "PENDING" },
-      // New, more detailed payment status
       paymentStatus: { 
         type: String, 
         enum: ["PENDING_DEPOSIT", "DEPOSIT_PAID", "PAID"], 
@@ -48,7 +47,7 @@ const orderSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "PLACED", // Initial state before payment confirmation
+        "PLACED", 
         "ACCEPTED", 
         "CUTTING", 
         "STITCHING", 
