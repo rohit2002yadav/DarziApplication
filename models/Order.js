@@ -6,7 +6,9 @@ const orderSchema = new mongoose.Schema(
     customerPhone: { type: String, required: true },
     customerEmail: { type: String },
     tailorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    tailorName: { type: String, required: true }, // THE FIX
+    tailorName: { type: String, required: true },
+    tailorPhone: { type: String }, // THE FIX
+    tailorAddress: { type: String }, // THE FIX
     garmentType: { type: String, required: true },
     items: { type: [String], default: [] },
     measurements: { type: mongoose.Schema.Types.Mixed, default: {} },
