@@ -1,3 +1,19 @@
+<<<<<<< HEAD
+# Ignore Node.js dependency folders
+node_modules/
+
+# Ignore environment files
+.env
+
+# Ignore log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+=======
 # Miscellaneous
 *.class
 *.log
@@ -43,3 +59,4 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+>>>>>>> 02c9c6f3e70552a492d2b6a3f71afbcda23b0c8f
